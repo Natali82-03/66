@@ -287,64 +287,66 @@ def main():
                     st.error(f"Ошибка при анализе экстремумов: {str(e)}")
             
             # 4. АНАЛИЗ КОРРЕЛЯЦИИ С ИНВЕСТИЦИЯМИ
-            if show_correlation and selected_topic != "Инвестиции":
-                st.subheader("💡 Корреляция с инвестициями")
+# Исправленный блок анализа корреляции
+if show_correlation and selected_topic != "Инвестиции":
+    st.subheader("💡 Корреляция с инвестициями")
+    
+    try:
+        df_invest = data["Инвестиции"]
+        merged_df = pd.merge(
+            df_topic, 
+            df_invest,
+            on='Name',
+            suffixes=('_demo', '_invest')
+        
+        if not merged_df.empty:
+            last_year = current_year
+            x_col = f"{last_year}_demo"
+            y_col = f"{last_year}_invest"
+            
+            if x_col in merged_df.columns and y_col in merged_df.columns:
+                # Scatter plot
+                fig = px.scatter(
+                    merged_df,
+                    x=x_col,
+                    y=y_col,
+                    trendline="ols",
+                    hover_name="Name",
+                    labels={
+                        x_col: f"{selected_topic}",
+                        y_col: "Инвестиции"
+                    }
+                )
                 
-                try:
-                    df_invest = data["Инвестиции"]
-                    merged_df = pd.merge(
-                        df_topic, df_invest,
-                        on='Name',
-                        suffixes=('_demo', '_invest')
-                    )
-                    if not merged_df.empty:
-                        last_year = current_year
-                        x_col = f"{last_year}_demo"
-                        y_col = f"{last_year}_invest"
-                        
-                        if x_col in merged_df.columns and y_col in merged_df.columns:
-                            # Scatter plot
-                            fig = px.scatter(
-                                merged_df,
-                                x=x_col,
-                                y=y_col,
-                                trendline="ols",
-                                hover_name="Name",
-                                labels={
-                                    x_col: f"{selected_topic}",
-                                    y_col: "Инвестиции"
-                                }
-                            )
-                            
-                            # Выделяем выбранную локацию
-                            if selected_location in merged_df['Name'].values:
-                                selected_point = merged_df[merged_df['Name'] == selected_location]
-                                fig.add_trace(go.Scatter(
-                                    x=selected_point[x_col],
-                                    y=selected_point[y_col],
-                                    mode='markers',
-                                    marker=dict(size=12, color='red'),
-                                    name=selected_location
-                                ))
-                            
-                            fig.update_layout(height=500)
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            # Расчет корреляции
-                            corr = merged_df[x_col].corr(merged_df[y_col])
-                            st.info(f"""
-                            **Коэффициент корреляции**: {corr:.2f}
-                            - От 0.7 до 1.0: Сильная прямая связь
-                            - От 0.3 до 0.7: Умеренная связь
-                            - От -0.3 до 0.3: Слабая или отсутствует связь
-                            - От -1.0 до -0.7: Сильная обратная связь
-                            """)
-                        else:
-                            st.warning("Отсутствуют необходимые столбцы данных")
-                    else:
-                        st.warning("Нет данных для анализа корреляции")
-                except Exception as e:
-                    st.error(f"Ошибка анализа корреляции: {str(e)}")
+                # Выделяем выбранную локацию
+                if selected_location in merged_df['Name'].values:
+                    selected_point = merged_df[merged_df['Name'] == selected_location]
+                    fig.add_trace(go.Scatter(
+                        x=selected_point[x_col],
+                        y=selected_point[y_col],
+                        mode='markers',
+                        marker=dict(size=12, color='red'),
+                        name=selected_location
+                    ))
+                
+                fig.update_layout(height=500)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Расчет корреляции
+                corr = merged_df[x_col].corr(merged_df[y_col])
+                st.info(f"""
+                **Коэффициент корреляции**: {corr:.2f}
+                - От 0.7 до 1.0: Сильная прямая связь
+                - От 0.3 до 0.7: Умеренная связь
+                - От -0.3 до 0.3: Слабая или отсутствует связь
+                - От -1.0 до -0.7: Сильная обратная связь
+                """)
+            else:
+                st.warning("Отсутствуют необходимые столбцы данных")
+        else:
+            st.warning("Нет данных для анализа корреляции")
+    except Exception as e:
+        st.error(f"Ошибка анализа корреляции: {str(e)}")
     
     except Exception as e:
         st.error(f"Критическая ошибка: {str(e)}")
