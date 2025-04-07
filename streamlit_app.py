@@ -296,7 +296,7 @@ def main():
                         df_topic, df_invest,
                         on='Name',
                         suffixes=('_demo', '_invest')
-                    
+                    )
                     if not merged_df.empty:
                         last_year = current_year
                         x_col = f"{last_year}_demo"
