@@ -1,10 +1,14 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import chardet
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from io import BytesIO
 
-# Конфигурация страницы (должна быть первой!)
-st.set_page_config(layout="wide")
+# Конфигурация страницы
+st.set_page_config(layout="wide", page_title="Демография и инвестиции")
 
 # --- Загрузка данных ---
 @st.cache_data
@@ -14,12 +18,8 @@ def load_data(file_name):
     try:
         df = pd.read_csv(file_name, sep=';', encoding=result['encoding'])
     except UnicodeDecodeError:
-        try:
-            df = pd.read_csv(file_name, sep=';', encoding='utf-8')
-        except:
-            df = pd.read_csv(file_name, sep=';', encoding='cp1251')
+        df = pd.read_csv(file_name, sep=';', encoding='cp1251')
     
-    # Очистка данных
     df = df.rename(columns=lambda x: x.strip())
     if 'Наименование муниципального образования' in df.columns:
         df = df.rename(columns={'Наименование муниципального образования': 'Name'})
@@ -28,109 +28,138 @@ def load_data(file_name):
 
 # Загрузка всех файлов
 try:
-    ch_1_6 = load_data('Ch_1_6.csv')      # Дети 1-6 лет
-    ch_3_18 = load_data('Ch_3_18.csv')    # Дети 3-18 лет
-    ch_5_18 = load_data('Ch_5_18.csv')    # Дети 5-18 лет
-    pop_3_79 = load_data('Pop_3_79.csv')  # Население 3-79 лет
-    rpop = load_data('RPop.csv')          # Среднегодовая численность населения
+    ch_1_6 = load_data('Ch_1_6.csv')
+    ch_3_18 = load_data('Ch_3_18.csv')
+    ch_5_18 = load_data('Ch_5_18.csv')
+    pop_3_79 = load_data('Pop_3_79.csv')
+    rpop = load_data('RPop.csv')
+    investments = load_data('Investment.csv')  # Новый файл с инвестициями
 except Exception as e:
     st.error(f"Ошибка загрузки данных: {str(e)}")
     st.stop()
 
-# Словарь тем (название: (датафрейм, описание, цвет))
+# Словарь данных
 data_dict = {
-    "Дети 1-6 лет": (ch_1_6, "Численность детей 1-6 лет", "skyblue"),
-    "Дети 3-18 лет": (ch_3_18, "Численность детей 3-18 лет", "salmon"),
-    "Дети 5-18 лет": (ch_5_18, "Численность детей 5-18 лет", "gold"),
-    "Население 3-79 лет": (pop_3_79, "Численность населения 3-79 лет", "lightgreen"),
-    "Среднегодовая численность": (rpop, "Среднегодовая численность постоянного населения", "violet")
+    "Дети 1-6 лет": (ch_1_6, "#1f77b4"),
+    "Дети 3-18 лет": (ch_3_18, "#ff7f0e"),
+    "Дети 5-18 лет": (ch_5_18, "#2ca02c"),
+    "Население 3-79 лет": (pop_3_79, "#d62728"),
+    "Среднегодовая численность": (rpop, "#9467bd"),
+    "Инвестиции": (investments, "#17becf")  # Добавляем инвестиции
 }
 
 # --- Боковая панель ---
 with st.sidebar:
     st.title("Настройки анализа")
-    
-    # Выбор населенного пункта
-    all_locations = ch_1_6['Name'].unique()
-    selected_location = st.selectbox("Населённый пункт:", all_locations, index=0)
-    
-    # Выбор тем (можно несколько)
-    selected_topics = st.multiselect(
-        "Категории населения:",
-        list(data_dict.keys()),
-        default=["Дети 1-6 лет", "Среднегодовая численность"]
-    )
-    
-    if not selected_topics:
-        st.warning("Выберите хотя бы одну категорию!")
-        st.stop()
-    
-    # Фиксированные годы (2019-2024)
-    year_columns = [str(year) for year in range(2019, 2025)]
-    
-    # Выбор диапазона лет
-    year_range = st.slider(
-        "Диапазон лет:",
-        min_value=2019,
-        max_value=2024,
-        value=(2019, 2024)
-    )
-    selected_years = [str(year) for year in range(year_range[0], year_range[1]+1)]
+    selected_location = st.selectbox("Населённый пункт:", ch_1_6['Name'].unique())
+    selected_topic = st.selectbox("Категория населения:", list(data_dict.keys())[:-1])
+    show_forecast = st.checkbox("Показать прогноз на 5 лет", True)
+    show_correlation = st.checkbox("Анализ корреляции с инвестициями", True)
 
 # --- Основной интерфейс ---
-st.title(f"Демография Орловской области: {selected_location}")
+st.title(f"📊 {selected_location}: демография и инвестиции")
 
-# 1. Линейный график
-st.subheader("Динамика численности")
-fig_line, ax_line = plt.subplots(figsize=(12, 5))
-for topic in selected_topics:
-    df, label, color = data_dict[topic]
-    location_data = df[df['Name'] == selected_location]
-    if not location_data.empty:
-        ax_line.plot(
-            selected_years,
-            location_data[selected_years].values.flatten(),
-            label=label, color=color, marker='o', linewidth=2
-        )
-ax_line.set_xlabel("Год")
-ax_line.set_ylabel("Численность (чел.)")
-ax_line.legend()
-ax_line.grid(True, linestyle='--', alpha=0.7)
-st.pyplot(fig_line)
+# 1. Индикаторы динамики
+current_year = '2024'
+prev_year = '2023'
+df_topic = data_dict[selected_topic][0]
+current_val = df_topic[df_topic['Name'] == selected_location][current_year].values[0]
+prev_val = df_topic[df_topic['Name'] == selected_location][prev_year].values[0]
+delta_pct = ((current_val - prev_val) / prev_val) * 100
 
-# 2. Столбчатая диаграмма
-st.subheader("Сравнение по годам")
-fig_bar, ax_bar = plt.subplots(figsize=(12, 6))
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric(f"{selected_topic} ({current_year})", f"{current_val:,.0f} чел.")
+with col2:
+    st.metric("Изменение за год", f"{current_val - prev_val:+,.0f} чел.")
+with col3:
+    st.metric("Процент изменения", f"{delta_pct:+.1f}%")
 
-bar_width = 0.8 / len(selected_topics)  # Ширина столбцов
-opacity = 0.8
+# 2. График динамики с прогнозом
+years = [str(year) for year in range(2019, 2025)]
+values = df_topic[df_topic['Name'] == selected_location][years].values.flatten()
 
-for i, topic in enumerate(selected_topics):
-    df, label, color = data_dict[topic]
-    location_data = df[df['Name'] == selected_location]
-    if not location_data.empty:
-        values = location_data[selected_years].values.flatten()
-        positions = [x + i * bar_width for x in range(len(selected_years))]
-        ax_bar.bar(
-            positions, values, bar_width,
-            alpha=opacity, color=color, label=label
-        )
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=years, y=values, 
+    name="Исторические данные",
+    line=dict(width=4)
+))
 
-ax_bar.set_xticks([x + bar_width * (len(selected_topics)-1)/2 for x in range(len(selected_years))])
-ax_bar.set_xticklabels(selected_years)
-ax_bar.set_xlabel("Год")
-ax_bar.set_ylabel("Численность (чел.)")
-ax_bar.legend(bbox_to_anchor=(1.05, 1))
-ax_bar.grid(True, axis='y', linestyle='--', alpha=0.7)
-st.pyplot(fig_bar)
+# Прогнозирование
+if show_forecast:
+    X = np.array(range(len(years))).reshape(-1, 1)
+    model = LinearRegression()
+    model.fit(X, values)
+    
+    future_years = [str(year) for year in range(2025, 2029)]
+    X_future = np.array(range(len(years), len(years)+4)).reshape(-1, 1)
+    forecast = model.predict(X_future)
+    
+    fig.add_trace(go.Scatter(
+        x=future_years, y=forecast,
+        name="Прогноз",
+        line=dict(dash='dot', width=3)
+    ))
 
-# 3. Таблицы с данными
-st.subheader("Детальные данные")
-for topic in selected_topics:
-    df, label, _ = data_dict[topic]
-    st.markdown(f"**{label}**")
-    st.dataframe(
-        df[df['Name'] == selected_location][['Name'] + selected_years],
-        use_container_width=True,
-        height=120
+fig.update_layout(
+    title=f"Динамика: {selected_topic}",
+    height=500,
+    hovermode="x unified"
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# 3. Анализ корреляции с инвестициями
+if show_correlation:
+    st.subheader("📈 Корреляция с инвестициями")
+    
+    # Собираем данные для scatter plot
+    df_invest = data_dict["Инвестиции"][0]
+    merged_df = pd.merge(
+        df_topic, df_invest, 
+        on='Name', 
+        suffixes=('_pop', '_invest')
+    )
+    
+    # Выбираем последний доступный год
+    last_year = '2024'
+    fig_scatter = px.scatter(
+        merged_df, 
+        x=f"{last_year}_pop", 
+        y=f"{last_year}_invest",
+        hover_data=['Name'],
+        trendline="ols",
+        labels={
+            f"{last_year}_pop": f"{selected_topic}, чел.",
+            f"{last_year}_invest": "Инвестиции, руб."
+        }
+    )
+    
+    # Добавляем выбранный пункт
+    selected_point = merged_df[merged_df['Name'] == selected_location]
+    fig_scatter.add_trace(go.Scatter(
+        x=selected_point[f"{last_year}_pop"],
+        y=selected_point[f"{last_year}_invest"],
+        name=selected_location,
+        marker=dict(size=12, color='red')
+    ))
+    
+    fig_scatter.update_layout(height=600)
+    st.plotly_chart(fig_scatter, use_container_width=True)
+    
+    # Расчёт коэффициента корреляции
+    corr = merged_df[f"{last_year}_pop"].corr(merged_df[f"{last_year}_invest"])
+    st.info(f"Коэффициент корреляции между {selected_topic.lower()} и инвестициями: **{corr:.2f}**")
+
+# 4. Экспорт данных
+with st.expander("📤 Экспорт данных"):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_topic.to_excel(writer, sheet_name="Демография")
+        investments.to_excel(writer, sheet_name="Инвестиции")
+    st.download_button(
+        "Скачать все данные (Excel)",
+        output.getvalue(),
+        "демография_и_инвестиции.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
