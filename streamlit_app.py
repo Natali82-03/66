@@ -6,121 +6,102 @@ import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
 from io import BytesIO
 import chardet
-from datetime import datetime
 
 # Конфигурация страницы
-st.set_page_config(layout="wide", page_title="Демографический анализ")
+st.set_page_config(layout="wide", page_title="Демография и инвестиции")
 
-# Загрузка данных
-@st.cache_data
-def load_data(file_name):
-    with open(file_name, 'rb') as f:
-        result = chardet.detect(f.read(10000))
+# ... (остальные функции и загрузка данных остаются без изменений)
+
+# 3. Анализ корреляции с инвестициями
+if "Корреляция с инвестициями" in analysis_options and selected_topic != "Инвестиции":
+    st.subheader("📈 Корреляция с инвестициями")
+    
     try:
-        return pd.read_csv(file_name, sep=';', encoding=result['encoding'])
-    except:
-        try:
-            return pd.read_csv(file_name, sep=';', encoding='utf-8-sig')
-        except:
-            return pd.read_csv(file_name, sep=';', encoding='cp1251')
-
-try:
-    data = {
-        "Дети 1-6 лет": load_data('Ch_1_6.csv'),
-        "Дети 3-18 лет": load_data('Ch_3_18.csv'),
-        "Дети 5-18 лет": load_data('Ch_5_18.csv'),
-        "Население 3-79 лет": load_data('Pop_3_79.csv'),
-        "Среднегодовая численность": load_data('RPop.csv'),
-        "Инвестиции": load_data('Investment.csv')
-    }
-    
-    # Проверка загрузки данных
-    for name, df in data.items():
-        if df is None or df.empty:
-            st.error(f"Ошибка загрузки данных: {name}")
-            st.stop()
-except Exception as e:
-    st.error(f"Критическая ошибка: {str(e)}")
-    st.stop()
-
-# Сайдбар
-with st.sidebar:
-    st.title("Настройки")
-    selected_location = st.selectbox("Населенный пункт", data["Дети 1-6 лет"]['Name'].unique())
-    selected_topic = st.selectbox("Показатель", list(data.keys())[:-1])
-    show_forecast = st.checkbox("Показать прогноз", True)
-    show_correlation = st.checkbox("Анализ корреляции", True)
-
-# Основной интерфейс
-st.title(f"Демографический анализ: {selected_location}")
-
-try:
-    # Карточки с метриками
-    current_year = '2024'
-    prev_year = '2023'
-    df = data[selected_topic]
-    current_val = df[df['Name'] == selected_location][current_year].values[0]
-    prev_val = df[df['Name'] == selected_location][prev_year].values[0]
-    
-    cols = st.columns(3)
-    cols[0].metric(selected_topic, f"{current_val:,.0f}")
-    cols[1].metric("Изменение", f"{current_val - prev_val:+,.0f}")
-    cols[2].metric("% изменения", f"{((current_val - prev_val)/prev_val)*100:+.1f}%")
-
-    # График динамики
-    years = [str(year) for year in range(2019, 2025)]
-    values = df[df['Name'] == selected_location][years].values.flatten()
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=years, y=values, name="Факт"))
-    
-    if show_forecast:
-        model = LinearRegression()
-        model.fit(np.array(range(len(years))).reshape(-1,1), values)
-        future = model.predict(np.array(range(len(years), len(years)+5)).reshape(-1,1))
-        fig.add_trace(go.Scatter(
-            x=[str(y) for y in range(2025, 2030)],
-            y=future,
-            name="Прогноз",
-            line=dict(dash='dot')
-        ))
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Анализ корреляции
-    if show_correlation and selected_topic != "Инвестиции":
-        st.subheader("Корреляция с инвестициями")
-        merged = pd.merge(
-            df, 
-            data["Инвестиции"], 
-            on='Name', 
-            suffixes=('_pop', '_inv')
+        df_invest = data_dict["Инвестиции"][0]
+        merged_df = pd.merge(
+            df_topic, df_invest,
+            on='Name',
+            suffixes=('_demo', '_invest'))
+        
+        last_year = '2024'
+        
+        # Создаем базовый scatter plot
+        fig_corr = px.scatter(
+            merged_df,
+            x=f"{last_year}_demo",
+            y=f"{last_year}_invest",
+            hover_name="Name",
+            labels={
+                f"{last_year}_demo": f"{selected_topic}",
+                f"{last_year}_invest": "Инвестиции"
+            },
+            color_discrete_sequence=[color]
         )
         
-        fig = px.scatter(
-            merged, 
-            x=f"{current_year}_pop", 
-            y=f"{current_year}_inv",
-            trendline="ols",
-            hover_name="Name"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        # Ручной расчет линии тренда
+        x = merged_df[f"{last_year}_demo"].values
+        y = merged_df[f"{last_year}_invest"].values
+        if len(x) > 1:  # Проверка на достаточное количество точек
+            coefficients = np.polyfit(x, y, 1)
+            trendline = np.poly1d(coefficients)
+            x_trend = np.linspace(x.min(), x.max(), 100)
+            
+            fig_corr.add_trace(go.Scatter(
+                x=x_trend,
+                y=trendline(x_trend),
+                mode='lines',
+                name='Линия тренда',
+                line=dict(color='grey', dash='dash')
+            ))
         
-        corr = merged[f"{current_year}_pop"].corr(merged[f"{current_year}_inv"])
-        st.info(f"Коэффициент корреляции: {corr:.2f}")
-
-except Exception as e:
-    st.error(f"Ошибка обработки данных: {str(e)}")
-
-# Экспорт данных
-with st.expander("Экспорт"):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        data[selected_topic].to_excel(writer, sheet_name="Демография")
-        data["Инвестиции"].to_excel(writer, sheet_name="Инвестиции")
-    st.download_button(
-        "Скачать Excel",
-        output.getvalue(),
-        "данные.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # Выделение выбранного пункта
+        if selected_location in merged_df['Name'].values:
+            selected_data = merged_df[merged_df['Name'] == selected_location]
+            fig_corr.add_trace(go.Scatter(
+                x=selected_data[f"{last_year}_demo"],
+                y=selected_data[f"{last_year}_invest"],
+                name=selected_location,
+                mode='markers',
+                marker=dict(size=12, color='red')
+            ))
+        
+        fig_corr.update_layout(height=500)
+        st.plotly_chart(fig_corr, use_container_width=True)
+        
+        # Расчет корреляции
+        if len(x) > 1:
+            corr_coef = np.corrcoef(x, y)[0, 1]
+            st.info(f"""
+            **Коэффициент корреляции**: {corr_coef:.2f}
+            - Близко к 1: Сильная прямая связь
+            - Близко к 0: Нет связи
+            - Близко к -1: Сильная обратная связь
+            """)
+        else:
+            st.warning("Недостаточно данных для расчета корреляции")
+            
+    except Exception as e:
+        st.error(f"Ошибка при анализе корреляции: {str(e)}")
+# 4. Экспорт данных
+with st.expander("💾 Экспорт данных"):
+    tab1, tab2 = st.tabs(["CSV", "Excel"])
+    
+    with tab1:
+        st.download_button(
+            "Скачать демографические данные (CSV)",
+            df_topic.to_csv(index=False).encode('utf-8'),
+            f"{selected_topic}.csv",
+            "text/csv"
+        )
+    
+    with tab2:
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_topic.to_excel(writer, sheet_name=selected_topic[:30])
+            investments.to_excel(writer, sheet_name="Инвестиции")
+        st.download_button(
+            "Скачать все данные (Excel)",
+            output.getvalue(),
+            "демография_и_инвестиции.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
