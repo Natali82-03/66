@@ -10,9 +10,11 @@ import chardet
 
 # Конфигурация страницы
 st.set_page_config(layout="wide", page_title="Демография и инвестиции")
-def set_background_with_overlay(image_file, overlay_opacity=0.7):
+# Добавьте этот код после st.set_page_config()
+
+def set_background(image_file):
     """
-    Функция для установки фона с полупрозрачным оверлеем
+    Функция для установки фонового изображения
     """
     import base64
     
@@ -28,19 +30,12 @@ def set_background_with_overlay(image_file, overlay_opacity=0.7):
             background-repeat: no-repeat;
             background-attachment: fixed;
         }}
-        .main .block-container {{
-            background-color: rgba(255, 255, 255, {overlay_opacity});
-            border-radius: 10px;
-            padding: 2rem;
-            margin-top: 2rem;
-            margin-bottom: 2rem;
-        }}
         </style>
     """
     st.markdown(style, unsafe_allow_html=True)
 
-# Установите фон с полупрозрачным оверлеем
-set_background_with_overlay("fon.jpg", overlay_opacity=0.85)
+# Установите фон (укажите путь к вашему изображению)
+set_background("fon.jpg")
 # --- Улучшенная загрузка данных ---
 @st.cache_data
 def load_data(file_name):
