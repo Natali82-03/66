@@ -8,14 +8,12 @@ from sklearn.preprocessing import StandardScaler
 from io import BytesIO
 import chardet
 import base64
+
 # Конфигурация страницы
 st.set_page_config(layout="wide", page_title="Демография и инвестиции")
+
+# Функция для установки фона
 def set_background_with_overlay(image_file, overlay_opacity=0.7):
-    """
-    Функция для установки фона с полупрозрачным оверлеем
-    """
-    import base64
-    
     with open(image_file, "rb") as f:
         img_data = f.read()
     b64_encoded = base64.b64encode(img_data).decode()
@@ -39,8 +37,37 @@ def set_background_with_overlay(image_file, overlay_opacity=0.7):
     """
     st.markdown(style, unsafe_allow_html=True)
 
-# Установите фон с полупрозрачным оверлеем
+# Функция для добавления логотипа в угол
+def add_corner_logo():
+    with open("logo.png", "rb") as f:
+        logo_data = base64.b64encode(f.read()).decode()
+    
+    st.markdown(
+        f"""
+        <style>
+            .corner-logo {{
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                z-index: 100;
+                opacity: 0.8;
+                transition: opacity 0.3s;
+            }}
+            .corner-logo:hover {{
+                opacity: 1;
+            }}
+        </style>
+        <div class="corner-logo">
+            <img src="data:image/png;base64,{logo_data}" width="80">
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# Установка фона и логотипа
 set_background_with_overlay("fon.jpg", overlay_opacity=0.85)
+add_corner_logo()
+
 # --- Улучшенная загрузка данных ---
 @st.cache_data
 def load_data(file_name):
@@ -53,36 +80,7 @@ def load_data(file_name):
             df = pd.read_csv(file_name, sep=';', encoding='utf-8-sig')
         except:
             df = pd.read_csv(file_name, sep=';', encoding='cp1251')
-    # Добавьте после st.set_page_config(...)
-def add_corner_logo():
-    st.markdown(
-        """
-        <style>
-            .corner-logo {
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                z-index: 100;
-                opacity: 0.8;
-                transition: opacity 0.3s;
-            }
-            .corner-logo:hover {
-                opacity: 1;
-            }
-        </style>
-        
-        <div class="corner-logo">
-            <img src="data:image/png;base64,{}" width="80">
-        </div>
-        """.format(
-            # Кодируем изображение в base64
-            base64.b64encode(open("logo.png", "rb").read()).decode()
-        ),
-        unsafe_allow_html=True
-    )
-
-# Не забудьте импортировать base64 в начале файла
-
+    
     # Стандартизация данных
     df = df.rename(columns=lambda x: x.strip())
     if 'Наименование муниципального образования' in df.columns:
