@@ -104,32 +104,54 @@ if selected_topics:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 2. Интерактивный Топ-5
-    st.subheader(f"Топ-5 населённых пунктов ({selected_year} год)")
+    # 2. Рейтинг и антирейтинг Топ-5
+    st.subheader(f"Рейтинги населённых пунктов ({selected_year} год)")
     
     for topic in selected_topics:
         df, color = data_dict[topic]
-        top5 = df.nlargest(5, selected_year)[['Name', selected_year]].sort_values(selected_year, ascending=True)
         
-        fig = px.bar(
-            top5,
-            x=selected_year,
-            y='Name',
-            orientation='h',
-            title=f"{topic}",
-            color_discrete_sequence=[color],
-            labels={'Name': '', selected_year: 'Численность (чел.)'},
-            height=300
-        )
+        # Создаем две колонки
+        col_top, col_bottom = st.columns(2)
         
-        fig.update_traces(
-            hovertemplate="<b>%{y}</b><br>%{x:,} чел.<extra></extra>",
-            texttemplate='%{x:,}',
-            textposition='outside'
-        )
+        # Топ-5 (наибольшие значения)
+        with col_top:
+            top5 = df.nlargest(5, selected_year)[['Name', selected_year]].sort_values(selected_year)
+            fig_top = px.bar(
+                top5,
+                x=selected_year,
+                y='Name',
+                orientation='h',
+                title=f"🏆 Топ-5 по {topic}",
+                color_discrete_sequence=['#2ca02c'],  # Зеленый для топовых
+                labels={'Name': '', selected_year: 'Численность (чел.)'},
+                height=300
+            )
+            fig_top.update_traces(
+                hovertemplate="<b>%{y}</b><br>%{x:,} чел.<extra></extra>",
+                texttemplate='%{x:,}',
+                textposition='outside'
+            )
+            st.plotly_chart(fig_top, use_container_width=True)
         
-        fig.update_layout(showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        # Антирейтинг (наименьшие значения)
+        with col_bottom:
+            bottom5 = df.nsmallest(5, selected_year)[['Name', selected_year]].sort_values(selected_year, ascending=False)
+            fig_bottom = px.bar(
+                bottom5,
+                x=selected_year,
+                y='Name',
+                orientation='h',
+                title=f"⚠️ Антирейтинг по {topic}",
+                color_discrete_sequence=['#d62728'],  # Красный для антирейтинга
+                labels={'Name': '', selected_year: 'Численность (чел.)'},
+                height=300
+            )
+            fig_bottom.update_traces(
+                hovertemplate="<b>%{y}</b><br>%{x:,} чел.<extra></extra>",
+                texttemplate='%{x:,}',
+                textposition='outside'
+            )
+            st.plotly_chart(fig_bottom, use_container_width=True)
 
     # 3. Экспорт данных
     st.subheader("📤 Экспорт данных")
