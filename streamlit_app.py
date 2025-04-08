@@ -10,16 +10,7 @@ import chardet
 
 # Конфигурация страницы
 st.set_page_config(layout="wide", page_title="Демография и инвестиции")
-# Добавим CSS-анимацию в начало файла
-st.markdown("""
-<style>
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.03); }
-    100% { transform: scale(1); }
-}
-</style>
-""", unsafe_allow_html=True)
+
 # --- Улучшенная загрузка данных ---
 @st.cache_data
 def load_data(file_name):
@@ -103,7 +94,7 @@ with st.sidebar:
         list(data_dict.keys())[:-1],  # Все кроме инвестиций
         format_func=lambda x: f"{data_dict[x][2]} {x}"
     )
-
+    
     # Дополнительные опции
     analysis_options = st.multiselect(
         "Дополнительные анализы:",
@@ -114,26 +105,25 @@ with st.sidebar:
 # --- Основной интерфейс ---
 st.title(f"{data_dict[selected_topic][2]} Анализ: {selected_location}")
 
+# Инициализация cols перед блоком try
+cols = st.columns(3)
+
 # 1. Карточки с показателями
 current_year = '2024'
 prev_year = '2023'
-    ############################################ В раздел карточек с показателями добавим анимацию
-with cols[0]:
-    st.markdown(f"""
-    <div style="animation: pulse 2s infinite; border-left: 5px solid {color}; padding: 10px">
-        <h3 style="margin:0">{icon} {selected_topic}</h3>
-        <h1 style="margin:0">{current_val:,.0f}</h1>
-    </div>
-    """, unsafe_allow_html=True)
-    ######################################################
+
 try:
     df_topic, color, icon = data_dict[selected_topic]
+    
+    # Проверка наличия выбранного года в данных
+    if current_year not in df_topic.columns or prev_year not in df_topic.columns:
+        raise ValueError(f"Данные за {current_year} или {prev_year} год отсутствуют")
+    
     current_val = df_topic[df_topic['Name'] == selected_location][current_year].values[0]
     prev_val = df_topic[df_topic['Name'] == selected_location][prev_year].values[0]
     delta_val = current_val - prev_val
     delta_pct = (delta_val / prev_val) * 100 if prev_val != 0 else 0
     
-    cols = st.columns(3)
     with cols[0]:
         st.metric(f"{icon} {selected_topic} ({current_year})", 
                  f"{current_val:,.0f}")
@@ -145,12 +135,20 @@ try:
         st.metric("Процент изменения",
                  f"{delta_pct:+.1f}%",
                  delta_color="inverse" if delta_pct < 0 else "normal")
+
 except Exception as e:
     st.error(f"Ошибка при загрузке показателей: {str(e)}")
+    # Заполняем карточки заглушками в случае ошибки
+    with cols[0]:
+        st.metric(f"{icon} {selected_topic} ({current_year})", "N/A")
+    with cols[1]:
+        st.metric("Изменение за год", "N/A")
+    with cols[2]:
+        st.metric("Процент изменения", "N/A")
 
 # 2. График динамики с прогнозом
-years = [str(year) for year in range(2019, 2025)]
 try:
+    years = [str(year) for year in range(2019, 2025)]
     values = df_topic[df_topic['Name'] == selected_location][years].values.flatten()
     
     fig = go.Figure()
@@ -203,6 +201,10 @@ if "Корреляция с инвестициями" in analysis_options and se
         )
         
         last_year = '2024'
+        
+        # Проверка наличия данных
+        if f"{last_year}_demo" not in merged_df.columns or f"{last_year}_invest" not in merged_df.columns:
+            raise ValueError("Отсутствуют необходимые колонки для анализа корреляции")
         
         # Основной график корреляции
         fig_corr = px.scatter(
