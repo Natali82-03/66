@@ -1,218 +1,165 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from sklearn.linear_model import LinearRegression
-from io import BytesIO
+from plotly.subplots import make_subplots
 import chardet
+from io import BytesIO
 
 # Конфигурация страницы
-st.set_page_config(layout="wide", page_title="Демографический анализ")
+st.set_page_config(layout="wide", page_title="Демография Орловской области")
 
-# Улучшенная функция загрузки данных
+# --- Загрузка данных ---
 @st.cache_data
 def load_data(file_name):
+    with open(file_name, 'rb') as f:
+        result = chardet.detect(f.read(10000))
     try:
-        # Автоопределение кодировки
-        with open(file_name, 'rb') as f:
-            result = chardet.detect(f.read(10000))
-        
-        # Пробуем несколько кодировок
-        for encoding in [result['encoding'], 'utf-8-sig', 'cp1251']:
-            try:
-                df = pd.read_csv(file_name, sep=';', encoding=encoding)
-                
-                # Стандартизация названий столбцов
-                df = df.rename(columns=lambda x: x.strip())
-                
-                # Проверяем возможные варианты названия столбца с именами
-                name_col = next((col for col in df.columns 
-                               if col.lower() in ['name', 'наименование', 'наименование муниципального образования']), None)
-                
-                if name_col:
-                    df = df.rename(columns={name_col: 'Name'})
-                    df['Name'] = df['Name'].str.strip()
-                    return df
-                    
-            except Exception as e:
-                continue
-                
-        st.error(f"Не удалось загрузить файл {file_name}")
-        return None
-        
-    except Exception as e:
-        st.error(f"Ошибка при чтении файла {file_name}: {str(e)}")
-        return None
-
-# Загрузка всех данных с проверкой
-try:
-    data_files = {
-        "Дети 1-6 лет": "Ch_1_6.csv",
-        "Дети 3-18 лет": "Ch_3_18.csv",
-        "Дети 5-18 лет": "Ch_5_18.csv",
-        "Население 3-79 лет": "Pop_3_79.csv",
-        "Среднегодовая численность": "RPop.csv",
-        "Инвестиции": "Investment.csv"
-    }
+        df = pd.read_csv(file_name, sep=';', encoding=result['encoding'])
+    except UnicodeDecodeError:
+        try:
+            df = pd.read_csv(file_name, sep=';', encoding='utf-8')
+        except:
+            df = pd.read_csv(file_name, sep=';', encoding='cp1251')
     
-    data = {}
-    for name, file in data_files.items():
-        df = load_data(file)
-        if df is None or df.empty or 'Name' not in df.columns:
-            st.error(f"Проблема с данными: {name}")
-            st.stop()
-        data[name] = df
+    # Очистка данных
+    df = df.rename(columns=lambda x: x.strip())
+    if 'Наименование муниципального образования' in df.columns:
+        df = df.rename(columns={'Наименование муниципального образования': 'Name'})
+    df['Name'] = df['Name'].str.strip()
+    return df
 
+# Загрузка всех файлов
+try:
+    ch_1_6 = load_data('Ch_1_6.csv')      # Дети 1-6 лет
+    ch_3_18 = load_data('Ch_3_18.csv')    # Дети 3-18 лет
+    ch_5_18 = load_data('Ch_5_18.csv')    # Дети 5-18 лет
+    pop_3_79 = load_data('Pop_3_79.csv')  # Население 3-79 лет
+    rpop = load_data('RPop.csv')          # Среднегодовая численность
 except Exception as e:
-    st.error(f"Критическая ошибка: {str(e)}")
+    st.error(f"Ошибка загрузки данных: {str(e)}. Проверьте: 1) Наличие файлов 2) Правильность названий")
     st.stop()
 
-# Проверка наличия данных для выбранного показателя
-if 'Дети 1-6 лет' not in data or data['Дети 1-6 лет'].empty:
-    st.error("Отсутствуют необходимые данные")
-    st.stop()
+# Словарь тем (название: (датафрейм, цвет))
+data_dict = {
+    "Дети 1-6 лет": (ch_1_6, "#1f77b4"),
+    "Дети 3-18 лет": (ch_3_18, "#ff7f0e"),
+    "Дети 5-18 лет": (ch_5_18, "#2ca02c"),
+    "Население 3-79 лет": (pop_3_79, "#d62728"),
+    "Среднегодовая численность": (rpop, "#9467bd")
+}
 
-# Сайдбар с настройками
+# --- Боковая панель ---
 with st.sidebar:
     st.title("Настройки анализа")
     
     # Выбор населенного пункта
-    try:
-        locations = data['Дети 1-6 лет']['Name'].unique()
-        selected_location = st.selectbox(
-            "Выберите населенный пункт:",
-            locations,
-            index=0
-        )
-    except Exception as e:
-        st.error("Не удалось загрузить список населенных пунктов")
-        st.stop()
+    all_locations = ch_1_6['Name'].unique()
+    selected_location = st.selectbox("Населённый пункт:", all_locations, index=0)
     
-    # Выбор показателя
-    selected_topic = st.selectbox(
-        "Выберите показатель:",
-        list(data.keys())[:-1],  # Все кроме инвестиций
-        index=0
+    # Выбор тем (можно несколько)
+    selected_topics = st.multiselect(
+        "Категории населения:",
+        list(data_dict.keys()),
+        default=["Дети 1-6 лет", "Среднегодовая численность"]
     )
     
-    # Дополнительные опции
-    show_forecast = st.checkbox("Показать прогноз", True)
-    show_correlation = st.checkbox("Анализ корреляции", True)
+    # Выбор года для Топ-5
+    selected_year = st.selectbox(
+        "Год для анализа Топ-5:",
+        [str(year) for year in range(2019, 2025)],
+        index=0
+    )
 
-# Основной интерфейс
-st.title(f"Анализ: {selected_location}")
+# --- Основной интерфейс ---
+st.title(f"📊 Демографические показатели: {selected_location}")
 
-try:
-    # Получаем данные для выбранного показателя
-    df = data[selected_topic]
-    location_data = df[df['Name'] == selected_location]
+# 1. Интерактивный линейный график динамики
+if selected_topics:
+    st.subheader("Динамика численности")
+    fig = go.Figure()
     
-    if location_data.empty:
-        st.warning(f"Нет данных для {selected_location}")
-        st.stop()
-    
-    # Карточки с показателями
-    current_year = '2024'
-    prev_year = '2023'
-    
-    if current_year not in df.columns or prev_year not in df.columns:
-        st.error("Отсутствуют данные за выбранные годы")
-        st.stop()
-    
-    current_val = location_data[current_year].values[0]
-    prev_val = location_data[prev_year].values[0]
-    
-    cols = st.columns(3)
-    cols[0].metric(selected_topic, f"{current_val:,.0f}")
-    cols[1].metric("Изменение", f"{current_val - prev_val:+,.0f}")
-    cols[2].metric("% изменения", f"{((current_val - prev_val)/prev_val)*100:+.1f}%" if prev_val != 0 else "N/A")
-
-    # График динамики
-    years = [str(year) for year in range(2019, 2025) if str(year) in df.columns]
-    
-    if not years:
-        st.warning("Нет данных за указанный период")
-    else:
+    for topic in selected_topics:
+        df, color = data_dict[topic]
+        location_data = df[df['Name'] == selected_location]
+        years = [str(year) for year in range(2019, 2025)]
         values = location_data[years].values.flatten()
         
-        fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=years,
             y=values,
-            name="Фактические данные",
-            line=dict(width=3)
+            name=topic,
+            line=dict(color=color, width=3),
+            mode='lines+markers',
+            hovertemplate="<b>%{x}</b><br>%{y:,} чел.<extra></extra>"
         ))
-        
-        # Прогнозирование
-        if show_forecast and len(years) > 1:
-            try:
-                X = np.array(range(len(years))).reshape(-1, 1)
-                model = LinearRegression()
-                model.fit(X, values)
-                
-                future_years = [str(year) for year in range(int(years[-1])+1, int(years[-1])+6)]
-                forecast = model.predict(np.array(range(len(years), len(years)+5)).reshape(-1, 1))
-                
-                fig.add_trace(go.Scatter(
-                    x=future_years,
-                    y=forecast,
-                    name="Прогноз",
-                    line=dict(dash='dot')
-                ))
-            except Exception as e:
-                st.error(f"Ошибка прогнозирования: {str(e)}")
-        
-        st.plotly_chart(fig, use_container_width=True)
     
-    # Анализ корреляции
-    if show_correlation and selected_topic != "Инвестиции":
-        st.subheader("Корреляция с инвестициями")
-        
-        try:
-            df_invest = data["Инвестиции"]
-            merged_df = pd.merge(
-                df, 
-                df_invest, 
-                on='Name', 
-                suffixes=('_demo', '_invest')
-            )
-            
-            if current_year + '_demo' in merged_df.columns and current_year + '_invest' in merged_df.columns:
-                fig = px.scatter(
-                    merged_df,
-                    x=current_year + '_demo',
-                    y=current_year + '_invest',
-                    trendline="ols",
-                    hover_name="Name",
-                    title=f"Корреляция {selected_topic} и инвестиций"
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-                corr = merged_df[current_year + '_demo'].corr(merged_df[current_year + '_invest'])
-                st.info(f"Коэффициент корреляции: {corr:.2f}")
-            else:
-                st.warning("Недостаточно данных для анализа корреляции")
-                
-        except Exception as e:
-            st.error(f"Ошибка анализа корреляции: {str(e)}")
+    fig.update_layout(
+        xaxis_title="Год",
+        yaxis_title="Численность (чел.)",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        height=500,
+        template="plotly_white"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-except Exception as e:
-    st.error(f"Ошибка обработки данных: {str(e)}")
-
-# Экспорт данных
-with st.expander("Экспорт данных"):
-    try:
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            data[selected_topic].to_excel(writer, sheet_name="Демография")
-            data["Инвестиции"].to_excel(writer, sheet_name="Инвестиции")
+    # 2. Интерактивный Топ-5
+    st.subheader(f"Топ-5 населённых пунктов ({selected_year} год)")
+    
+    for topic in selected_topics:
+        df, color = data_dict[topic]
+        top5 = df.nlargest(5, selected_year)[['Name', selected_year]].sort_values(selected_year, ascending=True)
         
-        st.download_button(
-            "Скачать данные (Excel)",
-            output.getvalue(),
-            "демографические_данные.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        fig = px.bar(
+            top5,
+            x=selected_year,
+            y='Name',
+            orientation='h',
+            title=f"{topic}",
+            color_discrete_sequence=[color],
+            labels={'Name': '', selected_year: 'Численность (чел.)'},
+            height=300
         )
-    except Exception as e:
-        st.error(f"Ошибка при экспорте данных: {str(e)}")
+        
+        fig.update_traces(
+            hovertemplate="<b>%{y}</b><br>%{x:,} чел.<extra></extra>",
+            texttemplate='%{x:,}',
+            textposition='outside'
+        )
+        
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # 3. Экспорт данных
+    st.subheader("📤 Экспорт данных")
+    export_col1, export_col2 = st.columns(2)
+    
+    for topic in selected_topics:
+        df, _ = data_dict[topic]
+        
+        with export_col1:
+            # Экспорт в CSV
+            csv = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
+            st.download_button(
+                label=f"📄 {topic} (CSV)",
+                data=csv,
+                file_name=f"{topic.replace(' ', '_')}.csv",
+                mime="text/csv",
+                key=f"csv_{topic}"
+            )
+        
+        with export_col2:
+            # Экспорт в Excel
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name=topic[:30])
+            st.download_button(
+                label=f"💾 {topic} (Excel)",
+                data=output.getvalue(),
+                file_name=f"{topic.replace(' ', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"excel_{topic}"
+            )
+else:
+    st.warning("Пожалуйста, выберите хотя бы одну категорию населения")
