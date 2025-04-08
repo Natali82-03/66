@@ -54,7 +54,34 @@ def load_data(file_name):
         except:
             df = pd.read_csv(file_name, sep=';', encoding='cp1251')
     # Добавьте после st.set_page_config(...)
+def add_corner_logo():
+    st.markdown(
+        """
+        <style>
+            .corner-logo {
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                z-index: 100;
+                opacity: 0.8;
+                transition: opacity 0.3s;
+            }
+            .corner-logo:hover {
+                opacity: 1;
+            }
+        </style>
+        
+        <div class="corner-logo">
+            <img src="data:image/png;base64,{}" width="80">
+        </div>
+        """.format(
+            # Кодируем изображение в base64
+            base64.b64encode(open("logo.png", "rb").read()).decode()
+        ),
+        unsafe_allow_html=True
+    )
 
+# Не забудьте импортировать base64 в начале файла
 
     # Стандартизация данных
     df = df.rename(columns=lambda x: x.strip())
