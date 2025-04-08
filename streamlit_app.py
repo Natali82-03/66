@@ -10,7 +10,16 @@ import chardet
 
 # Конфигурация страницы
 st.set_page_config(layout="wide", page_title="Демография и инвестиции")
-
+# Добавим CSS-анимацию в начало файла
+st.markdown("""
+<style>
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+    100% { transform: scale(1); }
+}
+</style>
+""", unsafe_allow_html=True)
 # --- Улучшенная загрузка данных ---
 @st.cache_data
 def load_data(file_name):
@@ -94,7 +103,7 @@ with st.sidebar:
         list(data_dict.keys())[:-1],  # Все кроме инвестиций
         format_func=lambda x: f"{data_dict[x][2]} {x}"
     )
-    
+
     # Дополнительные опции
     analysis_options = st.multiselect(
         "Дополнительные анализы:",
@@ -108,7 +117,15 @@ st.title(f"{data_dict[selected_topic][2]} Анализ: {selected_location}")
 # 1. Карточки с показателями
 current_year = '2024'
 prev_year = '2023'
-
+    ############################################ В раздел карточек с показателями добавим анимацию
+with cols[0]:
+    st.markdown(f"""
+    <div style="animation: pulse 2s infinite; border-left: 5px solid {color}; padding: 10px">
+        <h3 style="margin:0">{icon} {selected_topic}</h3>
+        <h1 style="margin:0">{current_val:,.0f}</h1>
+    </div>
+    """, unsafe_allow_html=True)
+    ######################################################
 try:
     df_topic, color, icon = data_dict[selected_topic]
     current_val = df_topic[df_topic['Name'] == selected_location][current_year].values[0]
