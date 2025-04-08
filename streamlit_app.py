@@ -114,7 +114,7 @@ with st.sidebar:
     
     with col1:
         # Логотип Минцифры
-        st.image("min.png", width=100)
+        st.image("min.png", width=200)
     
     with col2:
         # Логотип университета
